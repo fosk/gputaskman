@@ -113,6 +113,9 @@ Shortcuts: F1 help, Ctrl+S export, Ctrl+P pause, Ctrl+A all processes.
 The `GUI preview build` workflow (`.github/workflows/build-gui.yml`) builds Windows x64/ARM64,
 Linux x64/arm64 and a macOS arm64 `.app` on every push to the `gui` branch.
 Pushing a tag such as `gui-v0.1` also publishes them as a permanent (pre-)release.
+`sync-upstream.yml` checks shanselman/gputaskman daily: when a new `vX.Y.Z` appears it merges it into
+`gui`, runs every test (including a GUI render test under Xvfb) and publishes `gui-vX.Y.Z`. A merge
+conflict or failing test publishes nothing and opens an issue instead.
 
 Portable build without a console window:
 

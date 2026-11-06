@@ -1,0 +1,151 @@
+name: Sync with upstream release
+
+# Once a day: if shanselman/gputaskman has published a new vX.Y.Z tag that has no gui-vX.Y.Z yet,
+# merge it into the gui branch, run every test (GUI included), push, then build and publish
+# gui-vX.Y.Z for all five platforms. On a merge conflict or a failing test nothing is published:
+# the run fails (GitHub emails you) and an issue explains what to fix.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"  # daily, 05:17 UTC
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream tag to merge, e.g. v0.4.0 (empty = newest)"
+        required: false
+        type: string
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM: https://github.com/shanselman/gputaskman.git
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    outputs:
+      tag: ${{ steps.push.outputs.tag }}
+      sha: ${{ steps.push.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gui
+          fetch-depth: 0
+          # GITHUB_TOKEN cannot push commits that change .github/workflows. If upstream edits its
+          # workflows, add a SYNC_TOKEN secret (fine-grained token: Contents + Workflows, read/write).
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Find the upstream release to merge
+        id: find
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git remote add upstream "$UPSTREAM"
+          git fetch --quiet --no-tags upstream '+refs/tags/v*:refs/upstream-tags/v*'
+          if [ -n "${REQUESTED:-}" ]; then
+            version="$REQUESTED"
+          else
+            version=$(git for-each-ref --format='%(refname:lstrip=2)' refs/upstream-tags \
+                      | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          fi
+          git rev-parse --verify --quiet "refs/upstream-tags/$version^{commit}" >/dev/null \
+            || { echo "::error::Upstream tag $version not found"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/gui-$version" >/dev/null; then
+            echo "gui-$version already exists: nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "New upstream release $version: merging it into gui." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream into gui
+        id: merge
+        if: steps.find.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.find.outputs.version }}
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git merge --no-ff --no-edit -m "Merge upstream $VERSION into gui" "refs/upstream-tags/$VERSION"; then
+            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflicts.txt"
+            git merge --abort
+            { echo "### Merge conflict with $VERSION"; echo; sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/conflicts.txt"; } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Merge conflict in: $(paste -sd ' ' "$RUNNER_TEMP/conflicts.txt")"
+            exit 1
+          fi
+
+      - uses: astral-sh/setup-uv@v6
+        if: steps.find.outputs.skip == 'false'
+        with:
+          version: "0.13.6"
+          python-version: "3.13"
+
+      - name: Run every test on the merged code
+        if: steps.find.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          uv sync --locked
+          xvfb-run -a uv run --locked python -m unittest discover -s tests -v
+          uv run --locked gputaskman --help > /dev/null
+          uv run --locked gputaskman-gui --help > /dev/null
+
+      - name: Push the merged gui branch
+        id: push
+        if: steps.find.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.find.outputs.version }}
+        run: |
+          set -uo pipefail
+          if ! git push origin HEAD:gui 2> "$RUNNER_TEMP/push.err"; then
+            cat "$RUNNER_TEMP/push.err"
+            if grep -qi "workflow" "$RUNNER_TEMP/push.err"; then
+              echo "::error::Upstream changed .github/workflows, which GITHUB_TOKEN may not push. Add a SYNC_TOKEN secret (Contents + Workflows read/write) and re-run."
+            fi
+            exit 1
+          fi
+          echo "tag=gui-$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Merged and pushed $(git rev-parse --short HEAD); building gui-$VERSION." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open an issue explaining what failed
+        if: failure()
+        continue-on-error: true  # issues can be disabled on forks; the failed run still emails you
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.find.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Automatic GUI update to upstream ${VERSION:-release} failed"
+          if gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number' | grep -q .; then
+            exit 0
+          fi
+          conflicts=$(test -s "$RUNNER_TEMP/conflicts.txt" && sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/conflicts.txt" || echo "- none (a test or the push failed)")
+          gh issue create --title "$title" --body "The daily sync could not apply the GUI changes on top of upstream \`${VERSION:-?}\`. Nothing was published.
+
+          Run log: $RUN_URL
+
+          Conflicting files:
+          $conflicts
+
+          To fix: merge \`$VERSION\` into the \`gui\` branch by hand (or ask Claude), push, then re-run this workflow from the Actions tab."
+
+  release:
+    needs: sync
+    if: needs.sync.outputs.tag
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build-gui.yml
+    with:
+      ref: ${{ needs.sync.outputs.sha }}
+      tag: ${{ needs.sync.outputs.tag }}
