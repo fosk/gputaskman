@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [gui]
+    tags: ["gui-v*"]  # a tag like gui-v0.1 also publishes a permanent release
 
 permissions:
   contents: read
@@ -137,3 +138,38 @@ jobs:
           name: gputaskman-gui-macos-arm64
           path: dist/gputaskman-gui-macos-arm64.zip*
           if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/gui-v')
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: gputaskman GUI ${{ github.ref_name }}
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            Graphical front end for gputaskman, built from `${{ github.sha }}`.
+
+            | Platform | File |
+            |---|---|
+            | Windows x64 | `gputaskman-gui-windows-x64.zip` |
+            | Windows ARM64 | `gputaskman-gui-windows-arm64.zip` |
+            | Linux x64 (glibc 2.35+) | `gputaskman-gui-linux-x64.tar.gz` |
+            | Linux arm64 (glibc 2.35+) | `gputaskman-gui-linux-arm64.tar.gz` |
+            | macOS Apple Silicon (12+) | `gputaskman-gui-macos-arm64.zip` |
+
+            Extract the whole archive and keep `_internal` beside the executable. Builds are unsigned:
+            on Windows choose "More info > Run anyway"; on macOS right-click the app and choose Open.
+            Validated on Windows x64 hardware; other platforms are built and smoke-tested only.
+          files: dist/*
+          fail_on_unmatched_files: true

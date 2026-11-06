@@ -112,6 +112,7 @@ Shortcuts: F1 help, Ctrl+S export, Ctrl+P pause, Ctrl+A all processes.
 
 The `GUI preview build` workflow (`.github/workflows/build-gui.yml`) builds Windows x64/ARM64,
 Linux x64/arm64 and a macOS arm64 `.app` on every push to the `gui` branch.
+Pushing a tag such as `gui-v0.1` also publishes them as a permanent (pre-)release.
 
 Portable build without a console window:
 
