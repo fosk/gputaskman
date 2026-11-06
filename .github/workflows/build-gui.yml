@@ -107,3 +107,33 @@ jobs:
           name: gputaskman-gui-linux-${{ matrix.arch }}
           path: dist/gputaskman-gui-linux-${{ matrix.arch }}.tar.gz*
           if-no-files-found: error
+
+  macos:
+    name: macOS arm64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.6"
+          python-version: "3.13"
+      - run: uv sync --locked --group release
+      - run: uv run --locked python -m unittest discover -s tests -q
+      - name: Build gputaskman-gui.app
+        run: uv run --locked --group release pyinstaller --noconfirm --clean tools/portable_gui.spec
+      - name: Check bundle and package
+        run: |
+          set -euo pipefail
+          app=dist/gputaskman-gui.app
+          exe="$app/Contents/MacOS/gputaskman-gui"
+          lipo -archs "$exe" | grep -qw arm64 || { echo "Not an arm64 executable"; exit 1; }
+          "$exe" --help
+          mkdir -p dist/pkg && ditto "$app" dist/pkg/gputaskman-gui.app && cp LICENSE README.md dist/pkg/
+          name=gputaskman-gui-macos-arm64
+          ditto -c -k --keepParent dist/pkg "dist/$name.zip"
+          (cd dist && shasum -a 256 "$name.zip" > "$name.zip.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gputaskman-gui-macos-arm64
+          path: dist/gputaskman-gui-macos-arm64.zip*
+          if-no-files-found: error

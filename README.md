@@ -110,6 +110,9 @@ refresh rate, all processes, pause, Export JSON (feeds `gputaskman diff`), Copy 
 when not elevated, Run as admin (needed for runtime and file details of protected processes).
 Shortcuts: F1 help, Ctrl+S export, Ctrl+P pause, Ctrl+A all processes.
 
+The `GUI preview build` workflow (`.github/workflows/build-gui.yml`) builds Windows x64/ARM64,
+Linux x64/arm64 and a macOS arm64 `.app` on every push to the `gui` branch.
+
 Portable build without a console window:
 
 ```powershell

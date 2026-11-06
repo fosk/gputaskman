@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, copy_metadata
@@ -30,3 +31,7 @@ exe = EXE(
     console=False,
 )
 bundle = COLLECT(exe, analysis.binaries, analysis.datas, name="gputaskman-gui")
+
+if sys.platform == "darwin":  # a double-clickable app bundle on macOS
+    app = BUNDLE(bundle, name="gputaskman-gui.app", bundle_identifier="com.github.gputaskman.gui",
+                 info_plist={"NSHighResolutionCapable": True, "LSMinimumSystemVersion": "12.0"})
