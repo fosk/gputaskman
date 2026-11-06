@@ -93,6 +93,30 @@ If an alternate package index makes `--locked` report a stale lockfile on an unc
 `uv run --frozen gputaskman` uses the checked-in lockfile without re-resolving it. `--frozen`
 skips the consistency check, so do not use it after changing dependencies.
 
+## Graphical UI (Windows)
+
+A windowed alternative to the terminal UI, built on tkinter (part of Python, no extra dependencies).
+Same collector, same numbers, same provenance markers.
+Not yet validated on GPU hardware: checked only with simulated snapshots under Linux/Xvfb.
+
+```powershell
+uv run --locked gputaskman-gui          # or: .\.venv\Scripts\gputaskman-gui.exe
+uv run --locked python -m gputaskman.gui --gpu 1 --interval 2
+```
+
+It shows the VRAM bar by process kind, eight trend charts, a sortable process table (click a column
+heading) and an inspector with the LLM weights / KV cache / compute split. Toolbar: GPU picker,
+refresh rate, all processes, pause, Export JSON (feeds `gputaskman diff`), Copy report, Help and,
+when not elevated, Run as admin (needed for runtime and file details of protected processes).
+Shortcuts: F1 help, Ctrl+S export, Ctrl+P pause, Ctrl+A all processes.
+
+Portable build without a console window:
+
+```powershell
+uv run --locked --group release pyinstaller --noconfirm tools/portable_gui.spec
+# -> dist\gputaskman-gui\gputaskman-gui.exe (keep _internal beside it)
+```
+
 ## Linux and WSL
 
 Tagged releases include portable Linux builds: `gputaskman-VERSION-linux-x64.tar.gz` and

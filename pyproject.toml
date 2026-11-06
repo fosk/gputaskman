@@ -28,6 +28,9 @@ dependencies = [
 gputaskman = "gputaskman.cli:main"
 gtm = "gputaskman.cli:main"
 
+[project.gui-scripts]
+gputaskman-gui = "gputaskman.gui:main"
+
 [project.urls]
 Repository = "https://github.com/shanselman/gputaskman"
 Issues = "https://github.com/shanselman/gputaskman/issues"
