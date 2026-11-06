@@ -1,0 +1,43 @@
+name: GUI preview build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [gui]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.6"
+          python-version: "3.13"
+      - run: uv sync --locked --group release
+      - run: uv run --locked python -m unittest discover -s tests -q
+      - name: Build gputaskman-gui.exe
+        run: uv run --locked --group release pyinstaller --noconfirm --clean tools/portable_gui.spec
+      - name: Check bundle and package
+        shell: pwsh
+        run: |
+          $bundle = "dist\gputaskman-gui"
+          $forbidden = "nvml.dll","nvcuda.dll","atiadlxx.dll","amd_smi.dll","dxgi.dll","pdh.dll"
+          $bad = Get-ChildItem $bundle -Recurse -File | Where-Object { $forbidden -contains $_.Name.ToLower() }
+          if ($bad) { throw "Driver libraries must not be bundled: $($bad.Name -join ', ')" }
+          Copy-Item LICENSE, README.md $bundle
+          Compress-Archive -Path $bundle -DestinationPath dist\gputaskman-gui-windows-x64.zip
+          (Get-FileHash dist\gputaskman-gui-windows-x64.zip -Algorithm SHA256).Hash.ToLower() + "  gputaskman-gui-windows-x64.zip" |
+            Set-Content dist\gputaskman-gui-windows-x64.zip.sha256
+      - name: Smoke-test the frozen executable (imports, tkinter, --help)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\gputaskman-gui\gputaskman-gui.exe -ArgumentList "--help" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "gputaskman-gui.exe --help exited with $($p.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gputaskman-gui-windows-x64
+          path: dist/gputaskman-gui-windows-x64.zip*
